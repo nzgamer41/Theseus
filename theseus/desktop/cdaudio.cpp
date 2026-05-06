@@ -5,7 +5,6 @@
 //   Windows: <ntddcdrm.h>     DeviceIoControl  IOCTL_CDROM_READ_TOC
 //
 // Playback backends (first match wins):
-//   UIX_CDAUDIO           : libmpv audio-only handle
 //   Linux or Windows      : CDROMREADAUDIO / IOCTL_CDROM_RAW_READ + SDL audio
 //   Anything else         : stubs (detection still works)
 //
@@ -204,68 +203,8 @@ static int        s_totalSeconds = 0;
 // Playback backends
 // ============================================================================
 
-// ---- A: libmpv (cross-platform audio-only) ---------------------------------
-#ifdef UIX_CDAUDIO
-
-#include <mpv/client.h>
-
-static mpv_handle* s_mpv            = nullptr;
-static bool        s_playing        = false;
-static bool        s_paused         = false;
-static int         s_pendingChapter = -1;
-static double      s_timePos        = 0.0;
-static double      s_chapterStart   = 0.0;
-
-static void CdBack_Init()
-{
-    s_mpv = mpv_create();
-    if (!s_mpv) { fprintf(stderr, "[CdAudio] mpv_create failed\n"); return; }
-    mpv_set_option_string(s_mpv, "video",         "no");
-    mpv_set_option_string(s_mpv, "audio-display", "no");
-    mpv_set_option_string(s_mpv, "keep-open",     "yes");
-    mpv_set_option_string(s_mpv, "terminal",      "no");
-    if (mpv_initialize(s_mpv) < 0) {
-        fprintf(stderr, "[CdAudio] mpv_initialize failed\n");
-        mpv_destroy(s_mpv); s_mpv = nullptr; return;
-    }
-    mpv_observe_property(s_mpv, 0, "time-pos", MPV_FORMAT_DOUBLE);
-}
-
-static void CdBack_Shutdown() { if (s_mpv) { mpv_destroy(s_mpv); s_mpv = nullptr; } }
-
-bool CdAudio_Play(int track)
-{
-    if (!s_mpv || track < 1) return false;
-    s_pendingChapter = track - 1;
-    s_playing = true; s_paused = false; s_timePos = 0.0; s_chapterStart = 0.0;
-    for (int i = 0; i < track - 1 && i < s_trackCount; ++i) s_chapterStart += s_trackDurations[i];
-    const char* cmd[] = { "loadfile", "cdda://", "replace", nullptr };
-    if (mpv_command(s_mpv, cmd) < 0) { s_playing = false; return false; }
-    return true;
-}
-void CdAudio_Stop()   { if (s_mpv) { const char* c[] = {"stop",nullptr}; mpv_command(s_mpv,c); } s_playing=s_paused=false; }
-void CdAudio_Pause()  { if (s_mpv&&s_playing){ mpv_set_property_string(s_mpv,"pause","yes"); s_paused=true; } }
-void CdAudio_Resume() { if (s_mpv){ mpv_set_property_string(s_mpv,"pause","no"); s_paused=false; } }
-bool   CdAudio_IsPlaying()   { return s_playing && !s_paused; }
-bool   CdAudio_IsPaused()    { return s_playing && s_paused; }
-double CdAudio_GetPosition() { double p=s_timePos-s_chapterStart; return p<0.0?0.0:p; }
-void CdAudio_Update()
-{
-    if (!s_mpv) return;
-    for (mpv_event* e; (e=mpv_wait_event(s_mpv,0))->event_id!=MPV_EVENT_NONE;) {
-        if (e->event_id==MPV_EVENT_FILE_LOADED && s_pendingChapter>=0) {
-            int64_t ch=s_pendingChapter; mpv_set_property(s_mpv,"chapter",MPV_FORMAT_INT64,&ch); s_pendingChapter=-1;
-        } else if (e->event_id==MPV_EVENT_END_FILE) {
-            s_playing=s_paused=false;
-        } else if (e->event_id==MPV_EVENT_PROPERTY_CHANGE) {
-            auto* p=(mpv_event_property*)e->data;
-            if (!strcmp(p->name,"time-pos")&&p->format==MPV_FORMAT_DOUBLE) s_timePos=*(double*)p->data;
-        }
-    }
-}
-
-// ---- B: SDL ring-buffer + platform raw-sector read (Linux + Windows) -------
-#elif defined(__linux__) || defined(_WIN32)
+// ---- SDL ring-buffer + platform raw-sector read (Linux + Windows) ----------
+#if defined(__linux__) || defined(_WIN32)
 
 #include <SDL.h>
 
