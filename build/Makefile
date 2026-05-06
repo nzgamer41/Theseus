@@ -723,7 +723,7 @@ desktop-clean:
 
 WIN64_DIR     = $(BUILDS_ROOT)/desktop-win64
 WIN64_TARGET  = $(WIN64_DIR)/theseus.exe
-WIN64_CXX     = x86_64-w64-mingw32-g++
+WIN64_CXX     = x86_64-w64-mingw32-g++-posix
 
 # libwinpthread-1.dll: on macOS/Homebrew it lives in x86_64-w64-mingw32/bin/;
 # on Linux/APT it lives in x86_64-w64-mingw32/lib/. Try bin/ first, fall back
